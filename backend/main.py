@@ -308,3 +308,37 @@ def compress_huffman():
         return budget_service.compress_expense_log(conn)
     finally:
         conn.close()
+
+
+# ---------- foundations lab (adversary + master theorem) ----------
+
+from backend.algorithms import foundations
+from backend import coverage as coverage_module
+
+
+@app.get("/lab/adversary")
+def lab_adversary(n: int = 4):
+    if n < 2 or n > 7:
+        raise HTTPException(400, "n must be between 2 and 7 (factorial explodes)")
+    return foundations.adversary_sorting_lab(n)
+
+
+@app.get("/lab/master-theorem")
+def lab_master_theorem(a: int, b: int, d: float):
+    try:
+        return foundations.master_theorem(a, b, d)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/lab/presets")
+def lab_presets():
+    return foundations.PRESET_RECURRENCES
+
+
+@app.get("/coverage")
+def coverage():
+    return {
+        "summary": coverage_module.coverage_summary(),
+        "rows": coverage_module.COVERAGE,
+    }

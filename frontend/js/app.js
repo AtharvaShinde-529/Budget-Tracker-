@@ -53,6 +53,8 @@ function showPage(name) {
   if (name === "registry")  loadRegistry();
   if (name === "analytics") loadAnalytics();
   if (name === "optimiser") loadOptimiser();
+  if (name === "lab") loadLab();
+  if (name === "coverage") loadCoverage();
 }
 
 // ---------- dashboard ----------
@@ -375,6 +377,8 @@ async function boot() {
 
   // optimiser controls
   document.getElementById("run-goals").addEventListener("click", loadOptimiser);
+  document.getElementById("adv-run").addEventListener("click", runAdversary);
+  document.getElementById("mt-run").addEventListener("click", runMasterTheorem);
   document.getElementById("run-change").addEventListener("click", loadOptimiser);
 
   // keyboard shortcuts
@@ -622,5 +626,128 @@ async function loadOptimiser() {
   } catch (e) { toast(`Huffman: ${e.message}`, "error"); }
 }
 
+
+
+
+// ---------- theory lab ----------
+
+async function runAdversary() {
+  const n = parseInt(document.getElementById("adv-n").value, 10) || 4;
+  try {
+    const res = await fetch(`/lab/adversary?n=${n}`).then(r => r.json());
+    document.getElementById("adversary-result").innerHTML = `
+      <table class="data-table">
+        <tbody>
+          <tr><td>Permutations enumerated</td><td class="amount">${res.permutation_count}</td></tr>
+          <tr><td>n!</td><td class="amount">${res.n_factorial.toLocaleString()}</td></tr>
+          <tr><td>log₂(n!)</td><td class="amount">${res.log2_n_factorial}</td></tr>
+          <tr><td><strong>Lower bound ⌈log₂(n!)⌉</strong></td><td class="amount"><strong>${res.lower_bound_ceil}</strong></td></tr>
+          <tr><td>merge_sort min comparisons</td><td class="amount">${res.min_comparisons}</td></tr>
+          <tr><td>merge_sort mean comparisons</td><td class="amount">${res.mean_comparisons}</td></tr>
+          <tr><td>merge_sort max comparisons</td><td class="amount">${res.max_comparisons}</td></tr>
+          <tr><td>Ratio (mean / bound)</td><td class="amount">${res.ratio_mean_over_bound}</td></tr>
+        </tbody>
+      </table>
+      <p class="muted" style="margin-top:10px">Interpretation: any comparison sort must make at least ${res.lower_bound_ceil} comparisons in the worst case (because it needs to distinguish all ${res.n_factorial.toLocaleString()} permutations). merge_sort's worst case is ${res.max_comparisons} — close to optimal.</p>`;
+  } catch (e) {
+    toast(`Adversary: ${e.message}`, "error");
+  }
+}
+
+async function runMasterTheorem() {
+  const a = parseFloat(document.getElementById("mt-a").value) || 2;
+  const b = parseFloat(document.getElementById("mt-b").value) || 2;
+  const d = parseFloat(document.getElementById("mt-d").value) || 1;
+  try {
+    const res = await fetch(`/lab/master-theorem?a=${a}&b=${b}&d=${d}`).then(r => r.json());
+    document.getElementById("mt-result").innerHTML = `
+      <div class="card" style="margin-top:14px">
+        <div class="card-label">T(n) = ${a}·T(n/${b}) + Θ(n^${d})</div>
+        <div class="card-value" style="color:var(--accent-hover);font-size:22px">${res.teta}</div>
+        <div class="card-sub">Case ${res.case} · log_b(a) = ${res.log_b_a}</div>
+      </div>
+      <p class="muted" style="margin-top:10px">${res.explanation}</p>`;
+  } catch (e) {
+    toast(`Master theorem: ${e.message}`, "error");
+  }
+}
+
+async function loadPresets() {
+  try {
+    const presets = await fetch("/lab/presets").then(r => r.json());
+    document.getElementById("mt-presets").innerHTML = `
+      <div class="denom-row" style="margin-top:8px;margin-bottom:10px">
+        ${presets.map(p => `<button class="denom-chip" data-a="${p.a}" data-b="${p.b}" data-d="${p.d}">
+          <span class="denom-label">${p.name}</span> ${p.formula}
+        </button>`).join("")}
+      </div>`;
+    document.querySelectorAll("#mt-presets .denom-chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.getElementById("mt-a").value = btn.dataset.a;
+        document.getElementById("mt-b").value = btn.dataset.b;
+        document.getElementById("mt-d").value = btn.dataset.d;
+        runMasterTheorem();
+      });
+    });
+  } catch {}
+}
+
+function loadLab() {
+  loadPresets().then(() => {
+    runAdversary();
+    runMasterTheorem();
+  });
+}
+
+// ---------- coverage page ----------
+
+async function loadCoverage() {
+  try {
+    const res = await fetch("/coverage").then(r => r.json());
+    const s = res.summary;
+    document.getElementById("coverage-summary").textContent =
+      `${s.implemented}/${s.total} implemented · ${s.partial} partial · ${s.stub} stub · ${s.completion_pct}% complete`;
+
+    const byUnit = {};
+    for (const r of res.rows) byUnit[r.unit] = (byUnit[r.unit] || []).concat(r);
+
+    const unitTitles = {
+      "I":   "Unit I — Basics, complexity, lower bounds",
+      "II":  "Unit II — Recursion and Divide & Conquer",
+      "III": "Unit III — Dynamic Programming",
+      "IV":  "Unit IV — Greedy and Backtracking",
+      "V":   "Unit V — Network Flows",
+      "VI":  "Unit VI — NP-completeness",
+    };
+
+    let html = "";
+    for (const unit of ["I", "II", "III", "IV", "V", "VI"]) {
+      if (!byUnit[unit]) continue;
+      html += `<div class="panel" style="margin-top:14px">
+        <h2>${unitTitles[unit]}</h2>
+        <table class="data-table">
+          <thead><tr><th>Topic</th><th>Feature</th><th style="width:130px">Status</th></tr></thead>
+          <tbody>
+            ${byUnit[unit].map(r => {
+              const badge = r.status === "implemented"
+                ? "background:var(--success);color:#064e3b"
+                : r.status === "partial"
+                  ? "background:var(--warning);color:#451a03"
+                  : "background:var(--surface-2);color:var(--text-dim)";
+              return `<tr>
+                <td>${escapeHtml(r.topic)}</td>
+                <td>${escapeHtml(r.feature)}</td>
+                <td><span class="badge" style="${badge}">${r.status}</span></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>`;
+    }
+    document.getElementById("coverage-body").innerHTML = html;
+  } catch (e) {
+    toast(`Coverage: ${e.message}`, "error");
+  }
+}
 
 
