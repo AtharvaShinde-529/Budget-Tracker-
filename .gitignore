@@ -1,0 +1,13 @@
+﻿venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.hypothesis/
+data/*.db
+data/*.sqlite3
+benchmarks/results/*.png
+benchmarks/results/*.csv
+.env
+.vscode/
+.idea/
