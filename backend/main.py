@@ -1,15 +1,50 @@
-"""FastAPI entrypoint. Grows each step; this version wires /health, /registry and demo routes."""
+"""FastAPI entrypoint. Wires CRUD routes to ExpenseService, serves the UI shell."""
 
-import random
+from contextlib import contextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend import registry
-from backend.algorithms import searching, sorting
+from backend.db import get_conn, init_schema, is_empty
+from backend.models import (
+    CategoryOut, ExpenseCreate, ExpenseUpdate, ExpenseOut,
+    MutationResult, SearchResult, SortResult, UndoRedoStatus,
+)
+from backend.seed import seed
+from backend.services.expense_service import ExpenseService
 
-app = FastAPI(title="BudgetTracker - DAA Project", version="0.1.0")
+FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
 
+app = FastAPI(title="BudgetTracker - DAA Project", version="0.2.0")
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+
+
+@app.on_event("startup")
+def _startup():
+    init_schema()
+    if is_empty():
+        n = seed(force=True)
+        print(f"[startup] seeded {n} expenses")
+
+
+@contextmanager
+def service():
+    conn = get_conn()
+    try:
+        svc = ExpenseService(conn)
+        yield svc
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ---------- meta ----------
 
 @app.get("/health")
 def health():
@@ -21,57 +56,125 @@ def get_registry():
     return registry.REGISTRY
 
 
-@app.get("/demo/sort")
-def demo_sort(n: int = 20, seed: int = 0):
-    """Run every sorting algorithm on the same random input and report statistics."""
-    rng = random.Random(seed)
-    data = [rng.randint(-500, 500) for _ in range(n)]
-    reference = sorted(data)  # used only as an oracle here, fine in the API layer
+# ---------- categories ----------
 
-    results = {}
-    for name, fn in [
-        ("insertion_sort", sorting.insertion_sort),
-        ("selection_sort", sorting.selection_sort),
-        ("bubble_sort",    sorting.bubble_sort),
-        ("merge_sort",     sorting.merge_sort),
-        ("quick_sort",     sorting.quick_sort),
-        ("heap_sort",      sorting.heap_sort),
-        ("counting_sort",  sorting.counting_sort),
-        ("radix_sort",     sorting.radix_sort),
-    ]:
-        out, stats = fn(data)
-        results[name] = {"sorted_ok": out == reference, "stats": stats.as_dict()}
-
-    return {"n": n, "input": data, "results": results}
+@app.get("/categories", response_model=list[CategoryOut])
+def list_categories():
+    with service() as svc:
+        return svc.list_categories()
 
 
-@app.get("/demo/search")
-def demo_search(n: int = 50, seed: int = 0, target: int = 100):
-    rng = random.Random(seed)
-    data, _ = sorting.merge_sort([rng.randint(0, 200) for _ in range(n)])
-    idx, stats = searching.binary_search(data, target)
-    lo, hi, _ = searching.range_indices(data, 50, 150)
-    return {
-        "sorted": data,
-        "target": target,
-        "index": idx,
-        "comparisons": stats.comparisons,
-        "range_50_150": data[lo:hi],
-    }
+# ---------- expenses: list + sort ----------
+
+@app.get("/expenses", response_model=SortResult)
+def list_expenses(
+    field: str = "date",
+    order: str = "asc",
+    algo: str = "merge_sort",
+):
+    if field not in {"date", "amount_paise", "category_name", "description"}:
+        raise HTTPException(400, f"bad field: {field}")
+    if order not in {"asc", "desc"}:
+        raise HTTPException(400, f"bad order: {order}")
+    try:
+        with service() as svc:
+            rows, stats, f, o = svc.list_sorted(field, order, algo)
+            return {"rows": rows, "stats": stats, "field": f, "order": o}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
-@app.get("/", response_class=HTMLResponse)
+# ---------- expenses: range search ----------
+
+@app.get("/expenses/search", response_model=SearchResult)
+def search_expenses(from_date: str | None = None, to_date: str | None = None, q: str = ""):
+    with service() as svc:
+        rows, cmp_count = svc.search_range(from_date, to_date, q)
+        return {
+            "rows": rows,
+            "binary_search_comparisons": cmp_count,
+            "total_count": len(rows),
+        }
+
+
+# ---------- expenses: create / update / delete ----------
+
+@app.post("/expenses", response_model=MutationResult)
+def create_expense(payload: ExpenseCreate):
+    with service() as svc:
+        new_id = svc.create(payload.model_dump())
+        return {
+            "id": new_id,
+            "status": "created",
+            "undo_redo": svc.undo_redo_status(),
+        }
+
+
+@app.patch("/expenses/{expense_id}", response_model=MutationResult)
+def update_expense(expense_id: int, payload: ExpenseUpdate):
+    with service() as svc:
+        try:
+            svc.update(expense_id, payload.model_dump(exclude_none=True))
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+        return {"id": expense_id, "status": "updated", "undo_redo": svc.undo_redo_status()}
+
+
+@app.delete("/expenses/{expense_id}", response_model=MutationResult)
+def delete_expense(expense_id: int):
+    with service() as svc:
+        try:
+            svc.delete(expense_id)
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+        return {"id": expense_id, "status": "deleted", "undo_redo": svc.undo_redo_status()}
+
+
+# ---------- undo / redo ----------
+
+@app.post("/undo", response_model=UndoRedoStatus)
+def undo():
+    with service() as svc:
+        try:
+            svc.undo()
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return svc.undo_redo_status()
+
+
+@app.post("/redo", response_model=UndoRedoStatus)
+def redo():
+    with service() as svc:
+        try:
+            svc.redo()
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return svc.undo_redo_status()
+
+
+@app.get("/undo-redo-status", response_model=UndoRedoStatus)
+def undo_redo_status():
+    with service() as svc:
+        return svc.undo_redo_status()
+
+
+# ---------- autocomplete ----------
+
+@app.get("/autocomplete")
+def autocomplete(q: str = "", limit: int = 8):
+    if not q:
+        return {"suggestions": []}
+    with service() as svc:
+        return {"suggestions": svc.autocomplete(q, limit=limit)}
+
+
+# ---------- UI ----------
+
+@app.get("/favicon.ico")
+def favicon():
+    return FileResponse(str(FRONTEND_DIR / "assets" / "favicon.ico")) if (FRONTEND_DIR / "assets" / "favicon.ico").exists() else FileResponse(str(FRONTEND_DIR / "index.html"))
+
+
+@app.get("/")
 def root():
-    return """
-    <html><body style="font-family: system-ui; padding: 2rem; max-width: 40rem; margin: auto;">
-    <h1>BudgetTracker - DAA Project</h1>
-    <p>Backend is running. Try:</p>
-    <ul>
-      <li><a href="/docs">/docs</a> - interactive API docs</li>
-      <li><a href="/registry">/registry</a> - algorithm metadata</li>
-      <li><a href="/demo/sort?n=50">/demo/sort</a> - all sorts with stats</li>
-      <li><a href="/demo/search?n=50">/demo/search</a> - binary search + range</li>
-    </ul>
-    <p>UI comes in Step 4. This is just proof the API is up.</p>
-    </body></html>
-    """
+    return FileResponse(str(FRONTEND_DIR / "index.html"))

@@ -1,0 +1,188 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BudgetTracker — DAA Project</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">₹</div>
+        <div>
+          <div class="brand-title">BudgetTracker</div>
+          <div class="brand-sub">DAA Project</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-page="dashboard">
+          <span class="nav-icon">◧</span> Dashboard
+        </button>
+        <button class="nav-item" data-page="expenses">
+          <span class="nav-icon">≡</span> Expenses
+        </button>
+        <button class="nav-item" data-page="analytics">
+          <span class="nav-icon">◔</span> Analytics
+        </button>
+        <button class="nav-item" data-page="benchmark">
+          <span class="nav-icon">⚙</span> Benchmark
+        </button>
+        <button class="nav-item" data-page="registry">
+          <span class="nav-icon">ⓘ</span> Algorithms
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="footer-note">Every sort, search and analytic here is hand-written.</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 id="page-title">Dashboard</h1>
+        <div class="topbar-actions">
+          <button id="undo-btn" class="icon-btn" title="Undo (Ctrl+Z)">↶ Undo</button>
+          <button id="redo-btn" class="icon-btn" title="Redo (Ctrl+Y)">↷ Redo</button>
+          <button id="add-btn" class="primary-btn">+ Add expense</button>
+        </div>
+      </header>
+
+      <section id="dashboard" class="page">
+        <div class="cards">
+          <div class="card">
+            <div class="card-label">Monthly spend</div>
+            <div class="card-value" id="stat-month">—</div>
+            <div class="card-sub" id="stat-month-sub">loading…</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Total expenses</div>
+            <div class="card-value" id="stat-count">—</div>
+            <div class="card-sub">all time</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Top category</div>
+            <div class="card-value" id="stat-top-cat">—</div>
+            <div class="card-sub" id="stat-top-cat-sub">by total amount</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Average expense</div>
+            <div class="card-value" id="stat-avg">—</div>
+            <div class="card-sub">across all expenses</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Recent expenses</h2>
+            <span class="panel-hint">Latest 8 by date</span>
+          </div>
+          <div id="recent-table" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="expenses" class="page hidden">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>All expenses</h2>
+            <div class="controls">
+              <input id="search-input" class="text-input" placeholder="Search description or category…" />
+              <select id="sort-field" class="select">
+                <option value="date">Date</option>
+                <option value="amount_paise">Amount</option>
+                <option value="category_name">Category</option>
+                <option value="description">Description</option>
+              </select>
+              <select id="sort-order" class="select">
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
+              <select id="sort-algo" class="select">
+                <option value="merge_sort">Merge sort (stable)</option>
+                <option value="quick_sort">Quick sort (randomized)</option>
+                <option value="heap_sort">Heap sort</option>
+                <option value="radix_sort">Radix sort</option>
+                <option value="counting_sort">Counting sort</option>
+                <option value="insertion_sort">Insertion sort</option>
+                <option value="selection_sort">Selection sort</option>
+                <option value="bubble_sort">Bubble sort</option>
+              </select>
+            </div>
+          </div>
+          <div class="stats-bar" id="sort-stats"></div>
+          <div id="expenses-table" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="analytics" class="page hidden">
+        <div class="panel">
+          <h2>Analytics</h2>
+          <p class="muted">These modules arrive in the next step (D&amp;C, order statistics, greedy).</p>
+          <div id="analytics-body" class="placeholder"></div>
+        </div>
+      </section>
+
+      <section id="benchmark" class="page hidden">
+        <div class="panel">
+          <h2>Benchmark lab</h2>
+          <p class="muted">Sorting comparison benchmark arrives in a later step.</p>
+        </div>
+      </section>
+
+      <section id="registry" class="page hidden">
+        <div class="panel">
+          <h2>Algorithm registry</h2>
+          <p class="muted">Every algorithm with its unit, paradigm and complexity.</p>
+          <div id="registry-body"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Add / edit expense modal -->
+  <div id="modal-backdrop" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title">Add expense</h3>
+        <button id="modal-close" class="icon-btn">✕</button>
+      </div>
+      <form id="expense-form" class="modal-body">
+        <input type="hidden" id="f-id" />
+        <label>Amount (₹)
+          <input id="f-amount" type="number" step="0.01" min="0" required />
+        </label>
+        <label>Date
+          <input id="f-date" type="date" required />
+        </label>
+        <label>Category
+          <select id="f-category" required></select>
+        </label>
+        <label>Description
+          <input id="f-description" type="text" placeholder="e.g. Canteen lunch" autocomplete="off" />
+          <div id="autocomplete-suggestions" class="autocomplete-list"></div>
+        </label>
+        <label>Payment mode
+          <select id="f-mode">
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="card">Card</option>
+            <option value="netbanking">Net banking</option>
+            <option value="wallet">Wallet</option>
+          </select>
+        </label>
+        <div class="modal-footer">
+          <button type="button" id="modal-cancel" class="ghost-btn">Cancel</button>
+          <button type="submit" class="primary-btn">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
