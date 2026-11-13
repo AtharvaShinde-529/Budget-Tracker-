@@ -259,3 +259,52 @@ def analytics_category_totals():
 def analytics_daily_spend(days: int = 30):
     with analytics() as s:
         return s.daily_spend(days)
+
+
+# ---------- optimiser (greedy + huffman) ----------
+
+from backend.services import budget_service, settlement_service
+
+
+@app.post("/optimize/goals")
+def optimize_goals(body: dict):
+    try:
+        amount = int(body.get("monthly_savings_paise", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "monthly_savings_paise must be an integer")
+    return budget_service.optimize_goals(amount)
+
+
+@app.get("/optimize/bills")
+def optimize_bills():
+    return budget_service.schedule_bills()
+
+
+@app.post("/optimize/change")
+def optimize_change(body: dict):
+    try:
+        amount = int(body.get("amount_paise", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "amount_paise must be an integer")
+    if amount < 0:
+        raise HTTPException(400, "amount_paise must be non-negative")
+    return budget_service.breakdown_cash(amount)
+
+
+@app.get("/optimize/shifts")
+def optimize_shifts():
+    return budget_service.schedule_shifts()
+
+
+@app.get("/settle")
+def settle():
+    return settlement_service.settle()
+
+
+@app.get("/compress/huffman")
+def compress_huffman():
+    conn = get_conn()
+    try:
+        return budget_service.compress_expense_log(conn)
+    finally:
+        conn.close()

@@ -25,6 +25,8 @@ SORT_FUNCS = {
     "counting_sort":  sorting.counting_sort,
     "radix_sort":     sorting.radix_sort,
 }
+# Non-comparison sorts (counting, radix) need raw integer keys, not tuples.
+NON_COMPARISON_SORTS = {"counting_sort", "radix_sort"}
 
 
 class _Rev:
@@ -71,6 +73,37 @@ class ExpenseService:
     def list_sorted(self, field="date", order="asc", algorithm="merge_sort"):
         rows = self._fetch_all()
 
+        fn = SORT_FUNCS.get(algorithm)
+        if fn is None:
+            raise ValueError(f"unknown algorithm: {algorithm}")
+
+        descending = order == "desc"
+
+        # Non-comparison sorts (counting, radix) need raw integer keys.
+        # Only amount_paise qualifies; reject other fields with a clear message.
+        if algorithm in NON_COMPARISON_SORTS:
+            if field != "amount_paise":
+                raise ValueError(
+                    f"{algorithm} sorts integer keys only; use field='amount_paise' "
+                    f"(got field='{field}'). For strings/dates use a comparison sort."
+                )
+            amounts = [r["amount_paise"] for r in rows]
+            sorted_amounts, stats = fn(amounts)
+            if descending:
+                sorted_amounts = sorted_amounts[::-1]
+            by_amount = {}
+            for r in rows:
+                by_amount.setdefault(r["amount_paise"], []).append(r)
+            out_rows = [by_amount[amt].pop() for amt in sorted_amounts]
+            return out_rows, {
+                "algorithm": algorithm,
+                "comparisons": stats.comparisons,
+                "swaps": stats.swaps,
+                "calls": stats.calls,
+                "max_depth": stats.max_depth,
+            }, field, order
+
+        # Comparison sorts: (key, index, row) tuples preserve stability.
         key_fn = {
             "date":          lambda r: r["date"],
             "amount_paise":  lambda r: r["amount_paise"],
@@ -78,16 +111,10 @@ class ExpenseService:
             "description":   lambda r: r["description"].lower(),
         }[field]
 
-        descending = order == "desc"
         keyed = [
             ((_Rev(key_fn(r)) if descending else key_fn(r)), i, r)
             for i, r in enumerate(rows)
         ]
-
-        fn = SORT_FUNCS.get(algorithm)
-        if fn is None:
-            raise ValueError(f"unknown algorithm: {algorithm}")
-
         sorted_keyed, stats = fn(keyed)
         out_rows = [t[2] for t in sorted_keyed]
 
@@ -251,3 +278,4 @@ class ExpenseService:
             "undo_available": bool(self.undo_stack),
             "redo_available": bool(self.redo_stack),
         }
+

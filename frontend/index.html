@@ -24,6 +24,9 @@
         <button class="nav-item" data-page="expenses">
           <span class="nav-icon">≡</span> Expenses
         </button>
+        <button class="nav-item" data-page="optimiser">
+          <span class="nav-icon">⚡</span> Optimiser
+        </button>
         <button class="nav-item" data-page="analytics">
           <span class="nav-icon">◔</span> Analytics
         </button>
@@ -176,6 +179,49 @@
           <p class="muted" id="inversions-text">—</p>
         </div>
       </section>
+      <section id="optimiser" class="page hidden">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Goal funding <span class="panel-hint">(fractional knapsack)</span></h2>
+            <div class="controls">
+              <input id="savings-input" class="text-input" type="number" min="0" step="100" value="8000" placeholder="Monthly savings (₹)" />
+              <button id="run-goals" class="primary-btn">Optimise</button>
+            </div>
+          </div>
+          <div id="goals-result"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Bill schedule <span class="panel-hint">(job sequencing with deadlines)</span></h2>
+          <div id="bills-result"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Cash breakdown <span class="panel-hint">(greedy coin change)</span></h2>
+            <div class="controls">
+              <input id="change-input" class="text-input" type="number" min="0" step="1" value="1237" placeholder="Amount (₹)" />
+              <button id="run-change" class="primary-btn">Break down</button>
+            </div>
+          </div>
+          <div id="change-result"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Shift picks <span class="panel-hint">(interval scheduling)</span></h2>
+          <div id="shifts-result"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Roommate settlement <span class="panel-hint">(min transactions, two heaps)</span></h2>
+          <div id="settle-result"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Expense log compression <span class="panel-hint">(Huffman coding)</span></h2>
+          <div id="huffman-result"></div>
+        </div>
+      </section>
 </main>
   </div>
 
@@ -225,5 +271,7 @@
   <script src="/static/js/app.js"></script>
 </body>
 </html>
+
+
 
 

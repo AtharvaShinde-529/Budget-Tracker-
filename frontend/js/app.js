@@ -52,6 +52,7 @@ function showPage(name) {
   if (name === "expenses")  loadExpenses();
   if (name === "registry")  loadRegistry();
   if (name === "analytics") loadAnalytics();
+  if (name === "optimiser") loadOptimiser();
 }
 
 // ---------- dashboard ----------
@@ -350,11 +351,31 @@ async function boot() {
   // autocomplete
   document.getElementById("f-description").addEventListener("input", onDescriptionInput);
 
-  // expense page controls
-  ["sort-field", "sort-order", "sort-algo"].forEach(id =>
+  // sort-field: hide non-comparison sorts (counting/radix) for non-amount fields
+  document.getElementById("sort-field").addEventListener("change", () => {
+    const field = document.getElementById("sort-field").value;
+    const algoSel = document.getElementById("sort-algo");
+    Array.from(algoSel.options).forEach(opt => {
+      if (opt.value === "counting_sort" || opt.value === "radix_sort") {
+        opt.disabled = (field !== "amount_paise");
+        opt.style.display = (field !== "amount_paise") ? "none" : "";
+      }
+    });
+    if ((algoSel.value === "counting_sort" || algoSel.value === "radix_sort")
+        && field !== "amount_paise") {
+      algoSel.value = "merge_sort";
+    }
+    loadExpenses();
+  });
+  // generic change handlers for order + algo
+  ["sort-order", "sort-algo"].forEach(id =>
     document.getElementById(id).addEventListener("change", loadExpenses)
   );
   document.getElementById("search-input").addEventListener("input", () => loadExpenses());
+
+  // optimiser controls
+  document.getElementById("run-goals").addEventListener("click", loadOptimiser);
+  document.getElementById("run-change").addEventListener("click", loadOptimiser);
 
   // keyboard shortcuts
   window.addEventListener("keydown", (e) => {
@@ -475,5 +496,131 @@ function renderSimpleTable(headers, rows) {
   const b = rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("");
   return `<table class="data-table"><thead>${h}</thead><tbody>${b}</tbody></table>`;
 }
+
+
+
+// ---------- optimiser page ----------
+
+function _rupees(paise) {
+  return "₹" + (paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
+async function loadOptimiser() {
+  // Goal funding — run with current savings input
+  try {
+    const amount = parseInt(document.getElementById("savings-input").value || "8000", 10) * 100;
+    const res = await fetch("/optimize/goals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ monthly_savings_paise: amount }),
+    }).then(r => r.json());
+
+    const rows = res.picked.map(p => `
+      <tr>
+        <td>${escapeHtml(p.name)}</td>
+        <td class="amount">${_rupees(p.weight_taken_paise)}</td>
+        <td>${p.fraction === 1 ? "fully funded" : `${Math.round(p.fraction * 100)}% funded`}</td>
+        <td class="amount">${p.value_taken.toFixed(2)}</td>
+      </tr>`).join("");
+    document.getElementById("goals-result").innerHTML = `
+      <p class="muted">Total value: <strong>${res.total_value}</strong> · Spent: <strong>${_rupees(res.total_spent_paise)}</strong> of ${_rupees(res.monthly_savings_paise)}
+        · ${res.stats.comparisons} comparisons</p>
+      <table class="data-table">
+        <thead><tr><th>Goal</th><th class="amount">Cost</th><th>Status</th><th class="amount">Value</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) { toast(`Goals: ${e.message}`, "error"); }
+
+  // Bills
+  try {
+    const res = await fetch("/optimize/bills").then(r => r.json());
+    const rows = res.scheduled.map(s => `
+      <tr>
+        <td>Day ${s.slot}</td>
+        <td>${escapeHtml(s.name)}</td>
+        <td class="amount">${_rupees(s.penalty_paise)}</td>
+      </tr>`).join("");
+    const skipped = res.skipped.map(s =>
+      `<span class="badge" style="border-color:var(--danger);color:#fca5a5">${escapeHtml(s.name)}</span>`
+    ).join(" ");
+    document.getElementById("bills-result").innerHTML = `
+      <p class="muted">Penalty avoided: <strong>${_rupees(res.penalty_saved_paise)}</strong> of ${_rupees(res.penalty_possible_paise)}
+        · ${res.stats.comparisons} comparisons</p>
+      <table class="data-table">
+        <thead><tr><th>Slot</th><th>Bill</th><th class="amount">Penalty</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${skipped ? `<p class="muted" style="margin-top:8px">Skipped (no free slot): ${skipped}</p>` : ""}`;
+  } catch (e) { toast(`Bills: ${e.message}`, "error"); }
+
+  // Cash breakdown
+  try {
+    const amountRupees = parseFloat(document.getElementById("change-input").value || "1237");
+    const amountPaise = Math.round(amountRupees * 100);
+    const res = await fetch("/optimize/change", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount_paise: amountPaise }),
+    }).then(r => r.json());
+
+    const chips = res.breakdown.map(b => {
+      const label = b.denomination_rupees >= 1
+        ? `₹${b.denomination_rupees}`
+        : `${b.denomination_paise}p`;
+      return `<div class="denom-chip"><span class="denom-label">${label}</span> × <strong>${b.count}</strong></div>`;
+    }).join("");
+    document.getElementById("change-result").innerHTML = `
+      <p class="muted">${res.breakdown.length} denominations · ${res.matches_input ? "✓ reconstructs exactly" : "✗ mismatch"}</p>
+      <div class="denom-row">${chips}</div>`;
+  } catch (e) { toast(`Change: ${e.message}`, "error"); }
+
+  // Shifts
+  try {
+    const res = await fetch("/optimize/shifts").then(r => r.json());
+    const rows = res.selected.map(s => `
+      <tr><td>${escapeHtml(s.name)}</td><td>${s.start}:00</td><td>${s.end}:00</td>
+      <td class="amount">${s.end - s.start}h</td></tr>`).join("");
+    document.getElementById("shifts-result").innerHTML = `
+      <p class="muted">${res.selected.length} of ${res.all_shifts.length} shifts · total ${res.total_hours} hours</p>
+      <table class="data-table">
+        <thead><tr><th>Shift</th><th>Start</th><th>End</th><th class="amount">Hours</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) { toast(`Shifts: ${e.message}`, "error"); }
+
+  // Settlement
+  try {
+    const res = await fetch("/settle").then(r => r.json());
+    const rows = res.transactions.map(t =>
+      `<tr><td>${escapeHtml(t.from)}</td><td>→</td><td>${escapeHtml(t.to)}</td>
+      <td class="amount pos">${_rupees(t.amount_paise)}</td></tr>`).join("");
+    document.getElementById("settle-result").innerHTML = `
+      <p class="muted">${res.transaction_count} transactions to settle ${_rupees(res.total_money_moved_paise)}</p>
+      <table class="data-table">
+        <thead><tr><th>From</th><th></th><th>To</th><th class="amount">Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) { toast(`Settle: ${e.message}`, "error"); }
+
+  // Huffman
+  try {
+    const res = await fetch("/compress/huffman").then(r => r.json());
+    if (res.error) {
+      document.getElementById("huffman-result").innerHTML = `<p class="muted">${escapeHtml(res.error)}</p>`;
+    } else {
+      const pct = (res.compression_ratio * 100).toFixed(1);
+      const top = res.top_codes.map(c =>
+        `<tr><td><code>${c.char}</code></td><td><code>${c.code}</code></td>
+        <td class="amount">${c.freq}</td><td class="amount">${c.bits}</td></tr>`).join("");
+      document.getElementById("huffman-result").innerHTML = `
+        <p class="muted">${res.original_chars} chars → ${res.compressed_bits} bits (${pct}% of 8-bit baseline) · ${res.unique_chars} unique chars · prefix-free: ${res.prefix_free}</p>
+        <table class="data-table">
+          <thead><tr><th>Char</th><th>Code</th><th class="amount">Freq</th><th class="amount">Bits</th></tr></thead>
+          <tbody>${top}</tbody>
+        </table>`;
+    }
+  } catch (e) { toast(`Huffman: ${e.message}`, "error"); }
+}
+
 
 

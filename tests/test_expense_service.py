@@ -160,3 +160,40 @@ def test_new_action_clears_redo(svc):
     svc.create({"amount_paise": 200, "date": "2026-01-16",
                 "category_id": cat, "description": "y", "payment_mode": "cash"})
     assert not svc.undo_redo_status()["redo_available"]
+
+
+# ---------- non-comparison sorts on amount_paise ----------
+
+def test_radix_sort_works_with_amount_field(svc):
+    rows, stats, _, _ = svc.list_sorted("amount_paise", "asc", "radix_sort")
+    amounts = [r["amount_paise"] for r in rows]
+    assert amounts == sorted(amounts)
+    assert stats["algorithm"] == "radix_sort"
+
+
+def test_radix_sort_descending_amount(svc):
+    rows, _, _, _ = svc.list_sorted("amount_paise", "desc", "radix_sort")
+    amounts = [r["amount_paise"] for r in rows]
+    assert amounts == sorted(amounts, reverse=True)
+
+
+def test_counting_sort_works_with_amount_field(svc):
+    rows, stats, _, _ = svc.list_sorted("amount_paise", "asc", "counting_sort")
+    amounts = [r["amount_paise"] for r in rows]
+    assert amounts == sorted(amounts)
+    assert stats["algorithm"] == "counting_sort"
+
+
+def test_radix_sort_rejects_non_integer_field(svc):
+    """Regression: radix_sort with field=date caused a 500 (TypeError on tuples)."""
+    with pytest.raises(ValueError) as exc_info:
+        svc.list_sorted("date", "asc", "radix_sort")
+    msg = str(exc_info.value).lower()
+    assert "amount_paise" in msg
+    assert "radix_sort" in msg or "integer" in msg
+
+
+def test_counting_sort_rejects_non_integer_field(svc):
+    with pytest.raises(ValueError) as exc_info:
+        svc.list_sorted("description", "asc", "counting_sort")
+    assert "amount_paise" in str(exc_info.value).lower()
