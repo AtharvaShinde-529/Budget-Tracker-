@@ -178,3 +178,84 @@ def favicon():
 @app.get("/")
 def root():
     return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+# ---------- analytics (D&C + order statistics) ----------
+
+from backend.services.analytics_service import AnalyticsService
+
+
+@contextmanager
+def analytics():
+    conn = get_conn()
+    try:
+        svc = AnalyticsService(conn)
+        yield svc
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.get("/analytics/summary")
+def analytics_summary():
+    with analytics() as s:
+        return s.summary()
+
+
+@app.get("/analytics/median")
+def analytics_median():
+    with analytics() as s:
+        return s.median_expense()
+
+
+@app.get("/analytics/percentile")
+def analytics_percentile(p: float = 90.0):
+    with analytics() as s:
+        return s.percentile(p)
+
+
+@app.get("/analytics/top-k")
+def analytics_top_k(k: int = 5):
+    with analytics() as s:
+        return s.top_k(k)
+
+
+@app.get("/analytics/outliers")
+def analytics_outliers():
+    with analytics() as s:
+        return s.outliers()
+
+
+@app.get("/analytics/streak")
+def analytics_streak():
+    with analytics() as s:
+        return s.worst_streak()
+
+
+@app.get("/analytics/inversions")
+def analytics_inversions():
+    with analytics() as s:
+        return s.inversions()
+
+
+@app.get("/analytics/dominant-category")
+def analytics_dominant_category():
+    with analytics() as s:
+        return s.dominant_category()
+
+
+@app.get("/analytics/duplicates")
+def analytics_duplicates():
+    with analytics() as s:
+        return s.duplicates()
+
+
+@app.get("/analytics/category-totals")
+def analytics_category_totals():
+    with analytics() as s:
+        return s.category_totals()
+
+
+@app.get("/analytics/daily-spend")
+def analytics_daily_spend(days: int = 30):
+    with analytics() as s:
+        return s.daily_spend(days)

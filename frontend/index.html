@@ -116,13 +116,7 @@
         </div>
       </section>
 
-      <section id="analytics" class="page hidden">
-        <div class="panel">
-          <h2>Analytics</h2>
-          <p class="muted">These modules arrive in the next step (D&amp;C, order statistics, greedy).</p>
-          <div id="analytics-body" class="placeholder"></div>
-        </div>
-      </section>
+      
 
       <section id="benchmark" class="page hidden">
         <div class="panel">
@@ -138,7 +132,51 @@
           <div id="registry-body"></div>
         </div>
       </section>
-    </main>
+          <section id="analytics" class="page hidden">
+        <div class="cards">
+          <div class="card">
+            <div class="card-label">Median expense</div>
+            <div class="card-value" id="an-median">—</div>
+            <div class="card-sub" id="an-median-sub">quickselect</div>
+          </div>
+          <div class="card">
+            <div class="card-label">90th percentile</div>
+            <div class="card-value" id="an-p90">—</div>
+            <div class="card-sub">above this is unusual</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Worst streak</div>
+            <div class="card-value" id="an-streak">—</div>
+            <div class="card-sub" id="an-streak-sub">max-sum subarray</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Dominant category</div>
+            <div class="card-value" id="an-dominant">—</div>
+            <div class="card-sub">Boyer-Moore majority</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Spend by category</h2>
+          <canvas id="category-chart" height="220"></canvas>
+        </div>
+
+        <div class="panel">
+          <h2>Outliers <span class="panel-hint">(IQR method, factor 1.5)</span></h2>
+          <div id="outliers-table" class="table-wrap"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Possible duplicates <span class="panel-hint">(closest pair D&amp;C)</span></h2>
+          <div id="duplicates-table" class="table-wrap"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Ranking change <span class="panel-hint">(inversion count vs last month)</span></h2>
+          <p class="muted" id="inversions-text">—</p>
+        </div>
+      </section>
+</main>
   </div>
 
   <!-- Add / edit expense modal -->
@@ -182,7 +220,10 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <script src="/static/js/chart.min.js"></script>
   <script src="/static/js/api.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
+
+

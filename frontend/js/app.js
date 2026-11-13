@@ -51,6 +51,7 @@ function showPage(name) {
   if (name === "dashboard") loadDashboard();
   if (name === "expenses")  loadExpenses();
   if (name === "registry")  loadRegistry();
+  if (name === "analytics") loadAnalytics();
 }
 
 // ---------- dashboard ----------
@@ -366,3 +367,113 @@ async function boot() {
 }
 
 document.addEventListener("DOMContentLoaded", boot);
+
+// ---------- analytics page ----------
+
+let categoryChart = null;
+
+async function loadAnalytics() {
+  try {
+    const [med, p90, streak, dom, outlierRes, dupRes, invRes, cats] = await Promise.all([
+      fetch("/analytics/median").then(r => r.json()),
+      fetch("/analytics/percentile?p=90").then(r => r.json()),
+      fetch("/analytics/streak").then(r => r.json()),
+      fetch("/analytics/dominant-category").then(r => r.json()),
+      fetch("/analytics/outliers").then(r => r.json()),
+      fetch("/analytics/duplicates").then(r => r.json()),
+      fetch("/analytics/inversions").then(r => r.json()),
+      fetch("/analytics/category-totals").then(r => r.json()),
+    ]);
+
+    document.getElementById("an-median").textContent = rupeesFromPaise(med.median_paise || 0);
+    document.getElementById("an-median-sub").textContent =
+      `${med.stats?.comparisons ?? 0} comparisons · ${med.stats?.calls ?? 0} partition passes`;
+    document.getElementById("an-p90").textContent = rupeesFromPaise(p90.value_paise || 0);
+
+    if (streak.start && streak.end) {
+      document.getElementById("an-streak").textContent = rupeesFromPaise(streak.sum_paise);
+      document.getElementById("an-streak-sub").textContent =
+        `${streak.start} → ${streak.end} (${streak.window_days} days)`;
+    } else {
+      document.getElementById("an-streak").textContent = "—";
+      document.getElementById("an-streak-sub").textContent = "no data";
+    }
+
+    if (dom.category) {
+      document.getElementById("an-dominant").textContent = dom.category;
+      const pct = ((dom.count / dom.total) * 100).toFixed(0);
+      document.getElementById("an-dominant").nextElementSibling.textContent =
+        `${dom.count}/${dom.total} transactions (${pct}%)` + (dom.strict_majority ? " · strict majority" : "");
+    }
+
+    // Outliers
+    const ol = outlierRes.outliers || [];
+    if (ol.length) {
+      document.getElementById("outliers-table").innerHTML = renderSimpleTable(
+        ["Date", "Description", "Category", "Amount"],
+        ol.map(r => [
+          fmtDate(r.date),
+          escapeHtml(r.description),
+          escapeHtml(r.category_name),
+          `<span class="amount big">${rupeesFromPaise(r.amount_paise)}</span>`,
+        ])
+      );
+    } else {
+      document.getElementById("outliers-table").innerHTML =
+        `<p class="muted">None outside the fences.</p>`;
+    }
+
+    // Duplicates
+    const dups = dupRes.duplicates || [];
+    if (dups.length === 2) {
+      document.getElementById("duplicates-table").innerHTML = renderSimpleTable(
+        ["Date", "Description", "Category", "Amount"],
+        dups.map(r => [
+          fmtDate(r.date),
+          escapeHtml(r.description),
+          escapeHtml(r.category_name),
+          rupeesFromPaise(r.amount_paise),
+        ])
+      );
+    } else {
+      document.getElementById("duplicates-table").innerHTML =
+        `<p class="muted">No suspiciously close pairs.</p>`;
+    }
+
+    // Inversions
+    document.getElementById("inversions-text").textContent =
+      invRes.inversions === 0 || !invRes.prev_month
+        ? "Not enough history (need 2 months of data)."
+        : `${invRes.inversions} inversions between ${invRes.prev_month} and ${invRes.this_month} rankings. ` +
+          `0 = no change in ordering; larger numbers mean category spend rankings shuffled.`;
+
+    // Chart
+    const labels = cats.map(c => c.category);
+    const totals = cats.map(c => c.total_paise / 100);
+    const colors = cats.map(c => c.color || "#6366f1");
+    const ctx = document.getElementById("category-chart");
+    if (categoryChart) categoryChart.destroy();
+    categoryChart = new Chart(ctx, {
+      type: "bar",
+      data: { labels, datasets: [{ label: "Total (₹)", data: totals, backgroundColor: colors }] },
+      options: {
+        indexAxis: "y",
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#8a93a6" }, grid: { color: "#2a3040" } },
+          y: { ticks: { color: "#e6e9f0" }, grid: { display: false } },
+        },
+      },
+    });
+  } catch (e) {
+    toast(`Analytics failed: ${e.message}`, "error");
+  }
+}
+
+function renderSimpleTable(headers, rows) {
+  const h = `<tr>${headers.map(x => `<th>${x}</th>`).join("")}</tr>`;
+  const b = rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("");
+  return `<table class="data-table"><thead>${h}</thead><tbody>${b}</tbody></table>`;
+}
+
+
